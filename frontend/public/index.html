@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html class="light" lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <title>Сводка погоды</title>
+    <link href="https://fonts.googleapis.com" rel="preconnect" />
+    <link crossorigin href="https://fonts.gstatic.com" rel="preconnect" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght@400;500;700&display=swap"
+      rel="stylesheet"
+    />
+    <script src="https://cdn.tailwindcss.com?plugins=forms"></script>
+    <script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              primary: "#137fec",
+              "primary-50": "#eef7ff",
+              "primary-100": "#dcf0ff",
+              "primary-200": "#bfe4ff",
+              "primary-300": "#90d3ff",
+              "primary-400": "#5abaff",
+              "primary-500": "#349eff",
+              "primary-600": "#137fec",
+              "primary-700": "#0c67ce",
+              "primary-800": "#0f52a1",
+              "primary-900": "#12467f",
+              "background-light": "#f6f7f8",
+              "background-dark": "#101922",
+            },
+            fontFamily: {
+              display: ["Inter", "sans-serif"],
+            },
+            borderRadius: {
+              DEFAULT: "0.25rem",
+              lg: "0.5rem",
+              xl: "0.75rem",
+              "2xl": "1rem",
+              "3xl": "1.5rem",
+              full: "9999px",
+            },
+            boxShadow: {
+              soft: "0 4px 20px -2px rgba(19, 127, 236, 0.05), 0 2px 6px -1px rgba(0, 0, 0, 0.02)",
+              card: "0 0 0 1px rgba(0,0,0,0.03), 0 2px 8px rgba(0,0,0,0.04)",
+            },
+          },
+        },
+      };
+    </script>
+    <link href="./styles.css" rel="stylesheet" />
+    <script defer src="./app.js"></script>
+  </head>
+  <body class="min-h-screen bg-background-light font-display text-slate-800 antialiased">
+    <header class="sticky top-0 z-50 w-full border-b border-slate-100 bg-white px-6 py-4 md:px-12">
+      <div class="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4">
+        <div class="flex items-center gap-3">
+          <div class="rounded-xl bg-primary/10 p-2">
+            <span class="material-icons-round text-2xl text-primary">cloud</span>
+          </div>
+          <div>
+            <h1 class="text-xl font-bold tracking-tight text-slate-900">SkyCast</h1>
+            <p class="text-xs text-slate-500">Агрегированная погода в реальном времени</p>
+          </div>
+        </div>
+
+        <form class="flex w-full max-w-xl items-center gap-2" id="cityForm">
+          <label class="sr-only" for="cityInput">Город</label>
+          <div class="relative group w-full">
+            <span
+              class="material-icons-round absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 transition-colors group-focus-within:text-primary"
+              >search</span
+            >
+            <input
+              autocomplete="off"
+              class="w-full rounded-xl border-transparent bg-slate-50 py-2.5 pl-10 pr-4 text-sm text-slate-700 placeholder-slate-400 shadow-sm transition-all focus:border-primary focus:bg-white focus:ring-0"
+              id="cityInput"
+              name="city"
+              placeholder="Введите город..."
+              required
+              type="text"
+            />
+          </div>
+          <button
+            class="rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-white shadow-lg shadow-primary/30 transition-colors hover:bg-primary-700"
+            type="submit"
+          >
+            Показать
+          </button>
+        </form>
+
+        <div id="settingsMenu" class="settings-menu">
+          <button id="settingsToggle" class="settings-button" type="button" aria-expanded="false" aria-controls="settingsPanel">
+            <span class="material-icons-round text-base">tune</span>
+            <span>Настройки</span>
+          </button>
+          <div id="settingsPanel" class="settings-panel hidden" role="dialog" aria-label="Настройки отображения">
+            <label class="settings-field">
+              <span>Температура</span>
+              <select id="tempUnitSelect" class="settings-select">
+                <option value="c">Цельсий (°C)</option>
+                <option value="f">Фаренгейт (°F)</option>
+              </select>
+            </label>
+
+            <label class="settings-field">
+              <span>Ветер</span>
+              <select id="windUnitSelect" class="settings-select">
+                <option value="kph">км/ч</option>
+                <option value="mph">миль/ч</option>
+                <option value="mps">м/с</option>
+              </select>
+            </label>
+
+            <label class="settings-field">
+              <span>Давление</span>
+              <select id="pressureUnitSelect" class="settings-select">
+                <option value="hpa">гПа</option>
+                <option value="mmhg">мм рт. ст.</option>
+              </select>
+            </label>
+
+            <label class="settings-toggle">
+              <input id="compareModeToggle" type="checkbox" />
+              <span>Режим сравнения источников</span>
+            </label>
+            <label class="settings-toggle">
+              <input id="statusPanelToggle" type="checkbox" />
+              <span>Панель состояния обновлений</span>
+            </label>
+          </div>
+        </div>
+
+        <span id="connectionBadge" class="badge connecting">Подключение</span>
+      </div>
+    </header>
+
+    <main class="p-6 md:p-8 md:pb-12">
+      <div class="mx-auto max-w-7xl space-y-6">
+        <section class="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-end">
+          <div>
+            <div class="mb-1 flex items-center text-sm text-slate-500">
+              <span class="material-icons-round mr-1 text-lg text-primary">location_on</span>
+              <span>Текущая локация</span>
+            </div>
+            <h2 id="cityName" class="text-3xl font-bold text-slate-900">--</h2>
+            <p id="summaryUpdated" class="mt-1 text-sm text-slate-500">Обновлено: --:--:--</p>
+          </div>
+          <p id="summarySources" class="summary-pill">Источники: 0 из 4</p>
+        </section>
+
+        <section class="grid grid-cols-1 gap-6 lg:grid-cols-12">
+          <div id="summaryColumn" class="space-y-6 lg:col-span-12">
+            <article class="relative overflow-hidden rounded-3xl bg-white p-8 shadow-card">
+              <div class="hero-glow" aria-hidden="true"></div>
+              <div class="relative z-10 flex flex-col justify-between gap-6 sm:flex-row sm:items-center">
+                <div>
+                  <div
+                    class="mb-4 inline-flex items-center rounded-full border border-green-100 bg-green-50 px-3 py-1 text-xs font-semibold text-green-700"
+                  >
+                    <span class="mr-2 h-1.5 w-1.5 rounded-full bg-green-500"></span>
+                    Актуальная сводка
+                  </div>
+                  <div class="flex items-start">
+                    <span id="summaryTemp" class="text-8xl font-bold tracking-tighter text-slate-900">--</span>
+                    <span id="summaryTempUnit" class="mt-2 text-4xl font-light text-slate-400">°C</span>
+                  </div>
+                  <p id="summaryCondition" class="mt-2 text-xl font-medium text-slate-600">
+                    Состояние недоступно
+                  </p>
+                </div>
+
+                <div class="hero-icon-wrap">
+                  <span class="material-symbols-outlined hero-icon">partly_cloudy_day</span>
+                </div>
+              </div>
+            </article>
+
+            <div class="grid grid-cols-2 gap-4 sm:gap-6">
+              <article class="metric-card">
+                <span class="metric-label">Ощущается как</span>
+                <p id="summaryFeelsLike" class="metric-value">--</p>
+              </article>
+
+              <article class="metric-card">
+                <span class="metric-label">Влажность</span>
+                <p id="summaryHumidity" class="metric-value">--</p>
+              </article>
+
+              <article class="metric-card">
+                <span class="metric-label">Ветер</span>
+                <p id="summaryWind" class="metric-value">--</p>
+              </article>
+
+              <article class="metric-card">
+                <span class="metric-label">Давление</span>
+                <p id="summaryPressure" class="metric-value">--</p>
+              </article>
+            </div>
+          </div>
+
+          <div id="statusColumn" class="lg:col-span-5" hidden>
+            <article class="flex h-full flex-col rounded-3xl bg-white p-6 shadow-card">
+              <h3 class="text-lg font-bold text-slate-900">Состояние обновлений</h3>
+              <p class="mt-2 text-sm text-slate-500">
+                Поток обновляется автоматически и подтягивает данные из всех доступных источников.
+              </p>
+
+              <div class="status-tile mt-6">
+                <span class="material-icons-round status-icon">hub</span>
+                <div>
+                  <p class="status-title">Поток данных</p>
+                  <p class="status-subtitle">Если соединение теряется, клиент переподключится автоматически.</p>
+                </div>
+              </div>
+
+              <div class="mt-6 space-y-3">
+                <button id="refreshBtn" type="button" class="status-refresh">Обновить сейчас</button>
+                <p class="status-note">
+                  Автообновление: каждые 30 секунд. При ручном обновлении источник, который не ответил, временно исключается из агрегата.
+                </p>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section class="forecast-card">
+          <div class="forecast-header">
+            <div>
+              <h3 class="text-xl font-bold text-slate-900">7-day forecast</h3>
+              <p id="forecastSummary" class="forecast-subtitle">Night, morning, day, and evening outlook</p>
+            </div>
+            <p id="forecastProvider" class="forecast-provider">Forecast: --</p>
+          </div>
+          <div id="weeklyForecastGrid" class="forecast-grid"></div>
+        </section>
+
+        <section id="sourcesSection" hidden>
+          <div class="mb-4 mt-2 flex flex-col items-start justify-between gap-2 sm:flex-row sm:items-center">
+            <h3 class="text-xl font-bold text-slate-900">Сравнение по источникам</h3>
+            <p class="text-sm text-slate-500">Meteoinfo, Gismeteo, Яндекс Погода и Weather.com</p>
+          </div>
+          <div id="sourcesGrid" class="sources-grid"></div>
+        </section>
+
+        <footer class="text-sm text-slate-500">
+          Если сайт-источник недоступен или изменил разметку, данные этого провайдера помечаются как недоступные.
+        </footer>
+      </div>
+    </main>
+  </body>
+</html>
