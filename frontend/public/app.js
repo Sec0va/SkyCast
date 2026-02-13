@@ -1,9 +1,15 @@
-const SOURCE_ORDER = ["meteoinfo", "gismeteo", "yandex", "weathercom"];
+const SOURCE_ORDER = ["meteoinfo", "gismeteo", "yandex", "weathercom", "meteoblue", "wunderground"];
 const SOURCE_TITLE = {
   meteoinfo: "Meteoinfo.ru",
   gismeteo: "GISMETEO.ru",
   yandex: "Яндекс Погода",
   weathercom: "Weather.com",
+  meteoblue: "MeteoBlue",
+  wunderground: "Weather Underground",
+};
+const SOURCE_DESCRIPTION = {
+  meteoblue: "Подробные прогнозы для любого населённого пункта, графики температуры и осадков.",
+  wunderground: "Прогнозы по местоположению, данные метеостанций, история погоды.",
 };
 const CITY_NAME_BY_KEY = {
   moscow: "Москва, RU",
@@ -17,6 +23,7 @@ const AUTO_REFRESH_MS = 30000;
 const CITY_AUTOCOMPLETE_DELAY_MS = 300;
 const CITY_AUTOCOMPLETE_LIMIT = 5;
 const CITY_GEOCODING_API = "https://geocoding-api.open-meteo.com/v1/search";
+const CITY_GEOCODING_GET_API = "https://geocoding-api.open-meteo.com/v1/get";
 const DEFAULT_SETTINGS = Object.freeze({
   tempUnit: "c",
   windUnit: "kph",
@@ -42,6 +49,7 @@ const state = {
 const els = {
   cityForm: document.getElementById("cityForm"),
   cityInput: document.getElementById("cityInput"),
+  cityGeoBtn: document.getElementById("cityGeoBtn"),
   citySuggestions: document.getElementById("citySuggestions"),
   refreshBtn: document.getElementById("refreshBtn"),
   connectionBadge: document.getElementById("connectionBadge"),
@@ -109,6 +117,7 @@ function bindUi() {
   }
 
   bindCityAutocomplete();
+  bindCityGeolocation();
   bindSettingsMenu();
 }
 
@@ -124,6 +133,122 @@ function requestCityWeather(cityName) {
   setBadge("connecting", "Подключение");
   connect(requestedCity);
   loadSnapshot(requestedCity);
+}
+
+function bindCityGeolocation() {
+  if (!els.cityGeoBtn) {
+    return;
+  }
+
+  els.cityGeoBtn.addEventListener("click", () => {
+    void locateCityByGeolocation();
+  });
+}
+
+async function locateCityByGeolocation() {
+  if (!els.cityInput || !els.cityGeoBtn) {
+    return;
+  }
+
+  if (!("geolocation" in navigator) || typeof navigator.geolocation.getCurrentPosition !== "function") {
+    setBadge("error", "Геолокация недоступна");
+    window.alert("Браузер не поддерживает геолокацию.");
+    return;
+  }
+
+  if (els.cityGeoBtn.classList.contains("is-loading")) {
+    return;
+  }
+
+  setGeoButtonLoading(true);
+  setBadge("connecting", "Поиск геопозиции");
+
+  try {
+    const position = await getCurrentPosition();
+    const cityName = await loadCityNameByCoordinates(position.coords.latitude, position.coords.longitude);
+
+    if (!cityName) {
+      throw new Error("CITY_NOT_FOUND");
+    }
+
+    els.cityInput.value = cityName;
+    cancelCityAutocomplete();
+    hideCitySuggestions();
+    requestCityWeather(cityName);
+  } catch (error) {
+    setBadge("error", "Ошибка геолокации");
+    window.alert(getGeolocationErrorMessage(error));
+  } finally {
+    setGeoButtonLoading(false);
+  }
+}
+
+function setGeoButtonLoading(isLoading) {
+  if (!els.cityGeoBtn) {
+    return;
+  }
+  els.cityGeoBtn.classList.toggle("is-loading", isLoading);
+  els.cityGeoBtn.disabled = isLoading;
+  els.cityGeoBtn.setAttribute("aria-busy", String(isLoading));
+}
+
+function getCurrentPosition() {
+  return new Promise((resolve, reject) => {
+    navigator.geolocation.getCurrentPosition(resolve, reject, {
+      enableHighAccuracy: false,
+      timeout: 10000,
+      maximumAge: 300000,
+    });
+  });
+}
+
+async function loadCityNameByCoordinates(latitude, longitude) {
+  const params = new URLSearchParams({
+    latitude: String(latitude),
+    longitude: String(longitude),
+    language: "ru",
+  });
+
+  const response = await fetch(`${CITY_GEOCODING_GET_API}?${params.toString()}`);
+  if (!response.ok) {
+    throw new Error(`CITY_LOOKUP_FAILED_${response.status}`);
+  }
+
+  const payload = await response.json();
+  const candidates = [
+    payload && payload.name,
+    payload && payload.city,
+    payload && payload.locality,
+    payload && payload.results && payload.results[0] && payload.results[0].name,
+  ];
+
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && candidate.trim()) {
+      return candidate.trim();
+    }
+  }
+
+  return "";
+}
+
+function getGeolocationErrorMessage(error) {
+  if (error && typeof error === "object" && "code" in error) {
+    if (error.code === 1) {
+      return "Доступ к геолокации запрещен. Разрешите доступ в браузере.";
+    }
+    if (error.code === 2) {
+      return "Не удалось определить текущее местоположение.";
+    }
+    if (error.code === 3) {
+      return "Превышено время ожидания геолокации.";
+    }
+  }
+
+  if (error instanceof Error && error.message === "CITY_NOT_FOUND") {
+    return "Город по текущим координатам не найден.";
+  }
+
+  return "Не удалось определить город по геолокации.";
 }
 
 function bindCityAutocomplete() {
@@ -721,6 +846,9 @@ function renderSourceCards(sourceRows) {
 
 function renderSingleSource(row, sourceKey) {
   const title = SOURCE_TITLE[sourceKey] || sourceKey;
+  const sourceDescription = SOURCE_DESCRIPTION[sourceKey]
+    ? `<p class="source-description">${escapeHtml(SOURCE_DESCRIPTION[sourceKey])}</p>`
+    : "";
   if (!row) {
     return `
       <article class="source-card">
@@ -730,6 +858,7 @@ function renderSingleSource(row, sourceKey) {
         </div>
         <p class="source-temp">--</p>
         <p class="source-condition">Ожидается обновление</p>
+        ${sourceDescription}
       </article>
     `;
   }
@@ -750,6 +879,7 @@ function renderSingleSource(row, sourceKey) {
       </div>
       <p class="source-temp">${formatTemperature(row.temperatureC)}</p>
       <p class="source-condition">${escapeHtml(translateCondition(row.condition) || "Состояние недоступно")}</p>
+      ${sourceDescription}
       <ul class="source-metrics">
         <li>Ощущается: ${formatTemperature(row.feelsLikeC)}</li>
         <li>Влажность: ${formatPercent(row.humidityPct)}</li>

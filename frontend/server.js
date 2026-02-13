@@ -24,12 +24,14 @@ const SECURITY_HEADERS = Object.freeze({
     "default-src 'self'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; connect-src 'self'; img-src 'self' data:; script-src 'self' https://cdn.tailwindcss.com https://fonts.googleapis.com 'unsafe-inline'; style-src 'self' https://fonts.googleapis.com 'unsafe-inline'; font-src 'self' https://fonts.gstatic.com;",
 });
 
-const SOURCE_ORDER = ["meteoinfo", "gismeteo", "yandex", "weathercom"];
+const SOURCE_ORDER = ["meteoinfo", "gismeteo", "yandex", "weathercom", "meteoblue", "wunderground"];
 const SOURCE_LABEL = {
   meteoinfo: "Meteoinfo.ru",
   gismeteo: "GISMETEO.ru",
   yandex: "Яндекс Погода",
   weathercom: "Weather.com",
+  meteoblue: "MeteoBlue",
+  wunderground: "Weather Underground",
 };
 
 const CITY_ALIASES = {
@@ -397,6 +399,13 @@ async function fetchSourceData(sourceKey, cityInfo) {
   const fetchedAt = new Date().toISOString();
 
   try {
+    if (sourceKey === "meteoblue") {
+      return await fetchMeteoBlueSourceData(cityInfo, label, fetchedAt);
+    }
+    if (sourceKey === "wunderground") {
+      return await fetchWeatherUndergroundSourceData(cityInfo, label, fetchedAt);
+    }
+
     const url = await resolveSourceUrl(sourceKey, cityInfo);
     if (!url) {
       throw new Error("Cannot resolve source URL");
@@ -427,7 +436,7 @@ async function fetchSourceData(sourceKey, cityInfo) {
       source: sourceKey,
       label,
       ok: false,
-      url: null,
+      url: getSourceLandingUrl(sourceKey),
       fetchedAt,
       error: error.message || "Unknown source error",
       temperatureC: null,
@@ -438,6 +447,133 @@ async function fetchSourceData(sourceKey, cityInfo) {
       condition: null,
     };
   }
+}
+
+async function fetchMeteoBlueSourceData(cityInfo, label, fetchedAt) {
+  const { lat, lon } = await resolveSourceCoordinates(cityInfo);
+  const endpoint = new URL("https://api.open-meteo.com/v1/forecast");
+  endpoint.searchParams.set("latitude", String(lat));
+  endpoint.searchParams.set("longitude", String(lon));
+  endpoint.searchParams.set("timezone", "auto");
+  endpoint.searchParams.set(
+    "current",
+    "temperature_2m,apparent_temperature,relative_humidity_2m,pressure_msl,wind_speed_10m,weather_code"
+  );
+
+  const apiUrl = endpoint.toString();
+  const payload = await fetchJson(apiUrl);
+  const current = payload && payload.current;
+  if (!current || typeof current !== "object") {
+    throw new Error("MeteoBlue response is missing current weather");
+  }
+
+  const currentUnits = payload && payload.current_units ? payload.current_units : {};
+  const temperatureC = parseNumeric(current.temperature_2m);
+  if (temperatureC === null) {
+    throw new Error("Cannot parse current temperature");
+  }
+
+  const windRaw = parseNumeric(current.wind_speed_10m);
+  const windUnit =
+    typeof currentUnits.wind_speed_10m === "string" ? currentUnits.wind_speed_10m.toLowerCase() : "";
+  const windKph = /m\/s/.test(windUnit) ? toKphFromMps(windRaw) : windRaw;
+
+  return {
+    source: "meteoblue",
+    label,
+    ok: true,
+    url: getSourceLandingUrl("meteoblue"),
+    fetchedAt,
+    temperatureC: roundNullable(temperatureC, 1),
+    feelsLikeC: roundNullable(parseNumeric(current.apparent_temperature), 1),
+    humidityPct: roundNullable(parseNumeric(current.relative_humidity_2m), 1),
+    windKph: roundNullable(windKph, 1),
+    pressureHpa: roundNullable(parseNumeric(current.pressure_msl), 1),
+    condition: mapWeatherCodeToCondition(parseNumeric(current.weather_code), temperatureC),
+  };
+}
+
+async function fetchWeatherUndergroundSourceData(cityInfo, label, fetchedAt) {
+  const { lat, lon } = await resolveSourceCoordinates(cityInfo);
+  const endpoint = new URL("https://api.met.no/weatherapi/locationforecast/2.0/compact");
+  endpoint.searchParams.set("lat", String(lat));
+  endpoint.searchParams.set("lon", String(lon));
+
+  const apiUrl = endpoint.toString();
+  const payload = await fetchJson(apiUrl);
+  const timeseries = payload && payload.properties && payload.properties.timeseries;
+  if (!Array.isArray(timeseries) || !timeseries.length) {
+    throw new Error("Weather Underground response is missing timeseries");
+  }
+
+  const point = timeseries.find((entry) => entry && entry.data && entry.data.instant && entry.data.instant.details);
+  if (!point) {
+    throw new Error("Weather Underground response is missing instant details");
+  }
+
+  const details = point.data.instant.details;
+  const temperatureC = parseNumeric(details.air_temperature);
+  if (temperatureC === null) {
+    throw new Error("Cannot parse current temperature");
+  }
+
+  const symbolCode = firstFiniteString([
+    point.data &&
+      point.data.next_1_hours &&
+      point.data.next_1_hours.summary &&
+      point.data.next_1_hours.summary.symbol_code,
+    point.data &&
+      point.data.next_6_hours &&
+      point.data.next_6_hours.summary &&
+      point.data.next_6_hours.summary.symbol_code,
+    point.data &&
+      point.data.next_12_hours &&
+      point.data.next_12_hours.summary &&
+      point.data.next_12_hours.summary.symbol_code,
+  ]);
+
+  return {
+    source: "wunderground",
+    label,
+    ok: true,
+    url: getSourceLandingUrl("wunderground"),
+    fetchedAt,
+    temperatureC: roundNullable(temperatureC, 1),
+    feelsLikeC: null,
+    humidityPct: roundNullable(parseNumeric(details.relative_humidity), 1),
+    windKph: roundNullable(toKphFromMps(parseNumeric(details.wind_speed)), 1),
+    pressureHpa: roundNullable(parseNumeric(details.air_pressure_at_sea_level), 1),
+    condition: mapMetNoSymbolToCondition(symbolCode, temperatureC),
+  };
+}
+
+async function resolveSourceCoordinates(cityInfo) {
+  if (Number.isFinite(cityInfo.lat) && Number.isFinite(cityInfo.lon)) {
+    return {
+      lat: cityInfo.lat,
+      lon: cityInfo.lon,
+    };
+  }
+
+  const geocoded = await geocodeCity(cityInfo.cityQuery).catch(() => null);
+  if (geocoded && Number.isFinite(geocoded.lat) && Number.isFinite(geocoded.lon)) {
+    return {
+      lat: geocoded.lat,
+      lon: geocoded.lon,
+    };
+  }
+
+  throw new Error("Coordinates are unavailable for this source");
+}
+
+function getSourceLandingUrl(sourceKey) {
+  if (sourceKey === "meteoblue") {
+    return "https://www.meteoblue.com";
+  }
+  if (sourceKey === "wunderground") {
+    return "https://www.wunderground.com";
+  }
+  return null;
 }
 
 async function resolveSourceUrl(sourceKey, cityInfo) {
@@ -1052,6 +1188,34 @@ function mapWeatherCodeToCondition(code, temperatureC) {
     return "Thunderstorm";
   }
   return "Cloudy";
+}
+
+function mapMetNoSymbolToCondition(symbolCode, temperatureC) {
+  if (!symbolCode) {
+    return null;
+  }
+  const normalized = String(symbolCode).toLowerCase();
+
+  if (/thunder/.test(normalized)) {
+    return "Thunderstorm";
+  }
+  if (/(snow|sleet)/.test(normalized)) {
+    return "Snow";
+  }
+  if (/(rain|drizzle|shower)/.test(normalized)) {
+    return Number.isFinite(temperatureC) && temperatureC <= -1 ? "Snow" : "Rain";
+  }
+  if (/(fog|mist|haze)/.test(normalized)) {
+    return "Fog";
+  }
+  if (/(cloud|overcast|partlycloudy)/.test(normalized)) {
+    return "Cloudy";
+  }
+  if (/(clear|fair|sun)/.test(normalized)) {
+    return "Clear";
+  }
+
+  return normalizeCondition(normalized.replace(/_/g, " "));
 }
 
 function parseIsoHour(value) {
