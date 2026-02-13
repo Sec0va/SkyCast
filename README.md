@@ -1,70 +1,118 @@
 # Weather Multi Source Dashboard
 
-Панель погоды, которая собирает данные из нескольких источников и отдает их через веб-интерфейс и API.
+`Weather Multi Source Dashboard` — это веб-панель, которая собирает текущую погоду из нескольких источников, нормализует данные и отдает единый snapshot через UI и API.
 
-## Требования
+## О проекте
 
-- Node.js `>=18` (рекомендуется Node.js 20)
-- npm
+Проект агрегирует данные из:
 
-## Локальный запуск
+- `Meteoinfo.ru`
+- `Gismeteo`
+- `Яндекс Погода`
+- `Weather.com`
 
-```bash
-npm install
-npm start
+После этого сервер:
+
+- приводит показатели к единым единицам измерения;
+- вычисляет агрегированную сводку по источникам;
+- строит прогноз на 7 дней (через Open-Meteo, с fallback на синтетическую модель);
+- отдает данные как разовый ответ (`REST`) и как поток обновлений (`SSE`).
+
+## Ключевые возможности
+
+- Агрегация погоды из нескольких независимых источников.
+- Устойчивость к частичным отказам: если часть источников недоступна, snapshot все равно формируется.
+- Кэширование по городу и защита от частых повторных запросов.
+- Live-обновления в браузере через `Server-Sent Events`.
+- Клиентские настройки отображения (единицы температуры, ветра, давления, режим сравнения источников).
+- Защитные HTTP-заголовки и базовый `rate limiting` по IP.
+
+## Архитектура
+
+1. Клиент запрашивает данные (`/api/weather`) или подключается к потоку (`/api/stream`).
+2. Сервер нормализует ввод города, применяет алиасы и при необходимости геокодирует его через Open-Meteo Geocoding API.
+3. По каждому источнику скачивается HTML-страница и парсится набор погодных метрик.
+4. Данные по источникам агрегируются в единую сводку с расчетом `confidence`.
+5. Формируется прогноз на 7 дней:
+   - основной источник: Open-Meteo Forecast API;
+   - fallback: синтетический прогноз на основе текущего агрегата.
+6. Snapshot возвращается в API и рассылается подписанным SSE-клиентам.
+
+## API
+
+| Метод | Endpoint | Назначение |
+| --- | --- | --- |
+| `GET` | `/` | Веб-интерфейс |
+| `GET` | `/health` | Healthcheck сервиса |
+| `GET` | `/api/weather?city=<город>` | Получить текущий snapshot |
+| `POST` | `/api/refresh?city=<город>` | Принудительно обновить snapshot |
+| `GET` | `/api/stream?city=<город>` | SSE-поток обновлений |
+
+Если `city` не передан, используется значение по умолчанию: `Москва`.
+
+## Формат snapshot (упрощенно)
+
+```json
+{
+  "city": "Москва, RU",
+  "cityQuery": "Москва",
+  "cityKey": "moscow",
+  "fetchedAt": "2026-02-13T20:00:00.000Z",
+  "durationMs": 1234,
+  "updateIntervalMs": 30000,
+  "aggregate": {
+    "sourceCount": 4,
+    "expectedSourceCount": 4,
+    "confidencePct": 100,
+    "temperatureC": -5.2,
+    "feelsLikeC": -9.4,
+    "humidityPct": 78,
+    "windKph": 14.1,
+    "pressureHpa": 1008,
+    "condition": "Cloudy"
+  },
+  "sources": [],
+  "forecast": {}
+}
 ```
 
-Приложение поднимается на `http://localhost:3000` (или на порту из `PORT`).
+## Структура репозитория
 
-## Переменные окружения
+```text
+.
+├── server.js          # HTTP-сервер, API, SSE, агрегация и парсинг источников
+├── public/
+│   ├── index.html     # Разметка интерфейса
+│   ├── app.js         # Клиентская логика, SSE-клиент, рендер карточек и прогноза
+│   └── styles.css     # Кастомные стили UI
+├── package.json       # Метаданные проекта и npm-скрипты
+├── .env.example       # Пример переменных окружения
+├── Dockerfile         # Контейнеризация приложения
+└── railway.json       # Конфигурация деплоя/healthcheck для Railway
+```
 
-Можно оставить значения по умолчанию из `.env.example`:
+## Конфигурация (переменные окружения)
 
-- `PORT=3000`
-- `UPDATE_INTERVAL_MS=30000`
-- `STALE_AFTER_MS=25000`
-- `FETCH_TIMEOUT_MS=12000`
-- `RATE_WINDOW_MS=60000`
-- `RATE_LIMIT_API=90`
-- `RATE_LIMIT_REFRESH=30`
-- `RATE_LIMIT_STREAM=45`
+| Переменная | По умолчанию | Описание |
+| --- | --- | --- |
+| `PORT` | `3000` | Порт HTTP-сервера |
+| `UPDATE_INTERVAL_MS` | `30000` | Интервал автообновления данных для SSE |
+| `STALE_AFTER_MS` | `25000` | Время, после которого snapshot считается устаревшим |
+| `FETCH_TIMEOUT_MS` | `12000` | Таймаут загрузки внешних источников |
+| `RATE_WINDOW_MS` | `60000` | Окно rate limit (мс) |
+| `RATE_LIMIT_API` | `90` | Лимит `GET /api/weather` за окно |
+| `RATE_LIMIT_REFRESH` | `30` | Лимит `POST /api/refresh` за окно |
+| `RATE_LIMIT_STREAM` | `45` | Лимит `GET /api/stream` за окно |
 
-## Маршруты
+## Технические детали
 
-- `GET /` - интерфейс
-- `GET /health` - healthcheck для Railway
-- `GET /api/weather?city=Москва` - получить снимок погоды (если `city` не передан, по умолчанию `Москва`)
-- `POST /api/refresh?city=Москва` - принудительно обновить данные
-- `GET /api/stream?city=Москва` - SSE-поток обновлений
+- Сервер: чистый `Node.js` (`node:http`), без Express.
+- Фронтенд: `Vanilla JS`, `Tailwind CSS` через CDN.
+- Внешние API: `Open-Meteo Geocoding` и `Open-Meteo Forecast`.
+- Хранение состояния: in-memory (на уровне процесса), без базы данных.
 
-## Деплой на Railway (через GitHub)
+## Ограничения
 
-1. Запушь проект в GitHub.
-2. В Railway создай новый сервис: `New` -> `Deploy from GitHub repo` -> выбери репозиторий.
-3. Дождись первого деплоя.
-4. Открой `Settings` -> `Networking` -> `Public Networking` -> `Generate Domain`, чтобы получить публичный URL.
-5. Проверь:
-   - `<твой-домен>/health` должен вернуть `200`
-   - `<твой-домен>/` должен открыть UI
+- Парсинг погодных сайтов зависит от их HTML-структуры и может требовать адаптации при изменениях на стороне источников.
+- Состояние и кэш не персистентны и сбрасываются при рестарте процесса.
 
-## Важно по текущему репозиторию
-
-- В проекте есть `Dockerfile`. Railway обычно использует его автоматически, если он найден в корне.
-- Файл `railway.json` уже настроен:
-  - `startCommand`: `npm start`
-  - `healthcheckPath`: `/health`
-  - `healthcheckTimeout`: `120`
-- Если меняешь переменные в Railway, изменения применяются после подтверждения staged changes и нового деплоя.
-
-## Частые проблемы на Railway
-
-- Деплой падает на healthcheck: проверь, что приложение слушает `process.env.PORT` (в этом проекте уже так сделано).
-- Нет публичной ссылки: нужно отдельно нажать `Generate Domain` в `Public Networking`.
-- Слишком много запросов к API: увеличь `RATE_LIMIT_*` или `RATE_WINDOW_MS`.
-
-## Полезные ссылки Railway
-
-- Services: https://docs.railway.com/services
-- Variables: https://docs.railway.com/variables
-- Healthchecks: https://docs.railway.com/deployments/healthchecks
-- Domains: https://docs.railway.com/networking/domains
