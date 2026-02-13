@@ -1,0 +1,14 @@
+{
+  "name": "weather-multi-source-dashboard",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Live weather dashboard that aggregates Meteoinfo, Gismeteo, Yandex Weather and Weather.com",
+  "main": "server.js",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  }
+}
