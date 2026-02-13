@@ -58,38 +58,43 @@
     <link href="./styles.css" rel="stylesheet" />
     <script defer src="./app.js"></script>
   </head>
-  <body class="min-h-screen bg-background-light font-display text-slate-800 antialiased">
-    <header class="sticky top-0 z-50 w-full border-b border-slate-100 bg-white px-6 py-4 md:px-12">
-      <div class="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4">
+  <body class="min-h-screen bg-background-light font-display text-slate-800 antialiased dark:bg-slate-900 dark:text-slate-100">
+    <header class="sticky top-0 z-50 w-full border-b border-slate-100 bg-white px-4 py-4 sm:px-6 md:px-12 dark:border-slate-700 dark:bg-slate-900/95">
+      <div class="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 sm:gap-4">
         <div class="flex items-center gap-3">
           <div class="rounded-xl bg-primary/10 p-2">
             <span class="material-icons-round text-2xl text-primary">cloud</span>
           </div>
           <div>
-            <h1 class="text-xl font-bold tracking-tight text-slate-900">SkyCast</h1>
-            <p class="text-xs text-slate-500">Агрегированная погода в реальном времени</p>
+            <h1 class="text-lg font-bold tracking-tight text-slate-900 sm:text-xl dark:text-slate-100">SkyCast</h1>
+            <p class="text-xs text-slate-500 dark:text-slate-400">Агрегированная погода в реальном времени</p>
           </div>
         </div>
 
-        <form class="flex w-full max-w-xl items-center gap-2" id="cityForm">
+        <form class="flex w-full max-w-xl flex-col items-stretch gap-2 sm:flex-row sm:items-center" id="cityForm">
           <label class="sr-only" for="cityInput">Город</label>
-          <div class="relative group w-full">
+          <div class="group relative w-full">
             <span
-              class="material-icons-round absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 transition-colors group-focus-within:text-primary"
+              class="material-icons-round absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 transition-colors group-focus-within:text-primary dark:text-slate-500"
               >search</span
             >
             <input
               autocomplete="off"
-              class="w-full rounded-xl border-transparent bg-slate-50 py-2.5 pl-10 pr-4 text-sm text-slate-700 placeholder-slate-400 shadow-sm transition-all focus:border-primary focus:bg-white focus:ring-0"
+              class="w-full rounded-xl border-transparent bg-slate-50 py-2.5 pl-10 pr-4 text-sm text-slate-700 placeholder-slate-400 shadow-sm transition-all focus:border-primary focus:bg-white focus:ring-0 dark:bg-slate-800 dark:text-slate-100 dark:placeholder-slate-500 dark:focus:bg-slate-800"
               id="cityInput"
               name="city"
               placeholder="Введите город..."
               required
               type="text"
             />
+            <div
+              id="citySuggestions"
+              class="absolute left-0 right-0 top-full z-40 mt-2 hidden overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg dark:border-slate-700 dark:bg-slate-800"
+              role="listbox"
+            ></div>
           </div>
           <button
-            class="rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-white shadow-lg shadow-primary/30 transition-colors hover:bg-primary-700"
+            class="w-full rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-white shadow-lg shadow-primary/30 transition-colors hover:bg-primary-700 sm:w-auto"
             type="submit"
           >
             Показать
@@ -128,6 +133,10 @@
             </label>
 
             <label class="settings-toggle">
+              <input id="themeToggle" type="checkbox" />
+              <span>Темная тема</span>
+            </label>
+            <label class="settings-toggle">
               <input id="compareModeToggle" type="checkbox" />
               <span>Режим сравнения источников</span>
             </label>
@@ -142,37 +151,37 @@
       </div>
     </header>
 
-    <main class="p-6 md:p-8 md:pb-12">
+    <main class="p-4 sm:p-6 md:p-8 md:pb-12">
       <div class="mx-auto max-w-7xl space-y-6">
         <section class="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-end">
           <div>
-            <div class="mb-1 flex items-center text-sm text-slate-500">
+            <div class="mb-1 flex items-center text-sm text-slate-500 dark:text-slate-400">
               <span class="material-icons-round mr-1 text-lg text-primary">location_on</span>
               <span>Текущая локация</span>
             </div>
-            <h2 id="cityName" class="text-3xl font-bold text-slate-900">--</h2>
-            <p id="summaryUpdated" class="mt-1 text-sm text-slate-500">Обновлено: --:--:--</p>
+            <h2 id="cityName" class="text-2xl font-bold text-slate-900 sm:text-3xl dark:text-slate-100">--</h2>
+            <p id="summaryUpdated" class="mt-1 text-sm text-slate-500 dark:text-slate-400">Обновлено: --:--:--</p>
           </div>
           <p id="summarySources" class="summary-pill">Источники: 0 из 4</p>
         </section>
 
         <section class="grid grid-cols-1 gap-6 lg:grid-cols-12">
           <div id="summaryColumn" class="space-y-6 lg:col-span-12">
-            <article class="relative overflow-hidden rounded-3xl bg-white p-8 shadow-card">
+            <article class="relative overflow-hidden rounded-3xl bg-white p-5 shadow-card sm:p-8 dark:border dark:border-slate-700 dark:bg-slate-800">
               <div class="hero-glow" aria-hidden="true"></div>
               <div class="relative z-10 flex flex-col justify-between gap-6 sm:flex-row sm:items-center">
                 <div>
                   <div
-                    class="mb-4 inline-flex items-center rounded-full border border-green-100 bg-green-50 px-3 py-1 text-xs font-semibold text-green-700"
+                    class="mb-4 inline-flex items-center rounded-full border border-green-100 bg-green-50 px-3 py-1 text-xs font-semibold text-green-700 dark:border-green-800/50 dark:bg-green-900/30 dark:text-green-300"
                   >
                     <span class="mr-2 h-1.5 w-1.5 rounded-full bg-green-500"></span>
                     Актуальная сводка
                   </div>
                   <div class="flex items-start">
-                    <span id="summaryTemp" class="text-8xl font-bold tracking-tighter text-slate-900">--</span>
-                    <span id="summaryTempUnit" class="mt-2 text-4xl font-light text-slate-400">°C</span>
+                    <span id="summaryTemp" class="text-6xl font-bold tracking-tighter text-slate-900 sm:text-8xl dark:text-slate-100">--</span>
+                    <span id="summaryTempUnit" class="mt-2 text-3xl font-light text-slate-400 sm:text-4xl dark:text-slate-500">°C</span>
                   </div>
-                  <p id="summaryCondition" class="mt-2 text-xl font-medium text-slate-600">
+                  <p id="summaryCondition" class="mt-2 text-xl font-medium text-slate-600 dark:text-slate-300">
                     Состояние недоступно
                   </p>
                 </div>
@@ -183,7 +192,7 @@
               </div>
             </article>
 
-            <div class="grid grid-cols-2 gap-4 sm:gap-6">
+            <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6">
               <article class="metric-card">
                 <span class="metric-label">Ощущается как</span>
                 <p id="summaryFeelsLike" class="metric-value">--</p>
@@ -207,9 +216,9 @@
           </div>
 
           <div id="statusColumn" class="lg:col-span-5" hidden>
-            <article class="flex h-full flex-col rounded-3xl bg-white p-6 shadow-card">
-              <h3 class="text-lg font-bold text-slate-900">Состояние обновлений</h3>
-              <p class="mt-2 text-sm text-slate-500">
+            <article class="flex h-full flex-col rounded-3xl bg-white p-6 shadow-card dark:border dark:border-slate-700 dark:bg-slate-800">
+              <h3 class="text-lg font-bold text-slate-900 dark:text-slate-100">Состояние обновлений</h3>
+              <p class="mt-2 text-sm text-slate-500 dark:text-slate-400">
                 Поток обновляется автоматически и подтягивает данные из всех доступных источников.
               </p>
 
@@ -234,7 +243,7 @@
         <section class="forecast-card">
           <div class="forecast-header">
             <div>
-              <h3 class="text-xl font-bold text-slate-900">7-day forecast</h3>
+              <h3 class="text-xl font-bold text-slate-900 dark:text-slate-100">7-дневный прогноз</h3>
               <p id="forecastSummary" class="forecast-subtitle">Night, morning, day, and evening outlook</p>
             </div>
             <p id="forecastProvider" class="forecast-provider">Forecast: --</p>
@@ -244,13 +253,13 @@
 
         <section id="sourcesSection" hidden>
           <div class="mb-4 mt-2 flex flex-col items-start justify-between gap-2 sm:flex-row sm:items-center">
-            <h3 class="text-xl font-bold text-slate-900">Сравнение по источникам</h3>
-            <p class="text-sm text-slate-500">Meteoinfo, Gismeteo, Яндекс Погода и Weather.com</p>
+            <h3 class="text-xl font-bold text-slate-900 dark:text-slate-100">Сравнение по источникам</h3>
+            <p class="text-sm text-slate-500 dark:text-slate-400">Meteoinfo, Gismeteo, Яндекс Погода и Weather.com</p>
           </div>
           <div id="sourcesGrid" class="sources-grid"></div>
         </section>
 
-        <footer class="text-sm text-slate-500">
+        <footer class="text-sm text-slate-500 dark:text-slate-400">
           Если сайт-источник недоступен или изменил разметку, данные этого провайдера помечаются как недоступные.
         </footer>
       </div>

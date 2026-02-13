@@ -12,7 +12,11 @@ const CITY_NAME_BY_KEY = {
   kazan: "Казань, RU",
 };
 const STORAGE_KEY = "weather_ui_settings_v1";
+const THEME_STORAGE_KEY = "theme";
 const AUTO_REFRESH_MS = 30000;
+const CITY_AUTOCOMPLETE_DELAY_MS = 300;
+const CITY_AUTOCOMPLETE_LIMIT = 5;
+const CITY_GEOCODING_API = "https://geocoding-api.open-meteo.com/v1/search";
 const DEFAULT_SETTINGS = Object.freeze({
   tempUnit: "c",
   windUnit: "kph",
@@ -27,13 +31,18 @@ const state = {
   reconnectTimer: null,
   reconnectAttempt: 0,
   autoRefreshTimer: null,
+  autocompleteTimer: null,
+  autocompleteController: null,
+  citySuggestions: [],
   lastSnapshot: null,
+  theme: loadThemePreference(),
   settings: loadSettings(),
 };
 
 const els = {
   cityForm: document.getElementById("cityForm"),
   cityInput: document.getElementById("cityInput"),
+  citySuggestions: document.getElementById("citySuggestions"),
   refreshBtn: document.getElementById("refreshBtn"),
   connectionBadge: document.getElementById("connectionBadge"),
   cityName: document.getElementById("cityName"),
@@ -56,6 +65,7 @@ const els = {
   tempUnitSelect: document.getElementById("tempUnitSelect"),
   windUnitSelect: document.getElementById("windUnitSelect"),
   pressureUnitSelect: document.getElementById("pressureUnitSelect"),
+  themeToggle: document.getElementById("themeToggle"),
   compareModeToggle: document.getElementById("compareModeToggle"),
   statusPanelToggle: document.getElementById("statusPanelToggle"),
   forecastSummary: document.getElementById("forecastSummary"),
@@ -66,6 +76,7 @@ const els = {
 init();
 
 function init() {
+  applyTheme(state.theme);
   renderSourceCards([]);
   renderWeeklyForecast(null);
   bindUi();
@@ -86,12 +97,9 @@ function bindUi() {
       return;
     }
 
-    state.city = requestedCity;
-    state.reconnectAttempt = 0;
-    clearReconnectTimer();
-    setBadge("connecting", "Подключение");
-    connect(requestedCity);
-    loadSnapshot(requestedCity);
+    cancelCityAutocomplete();
+    hideCitySuggestions();
+    requestCityWeather(requestedCity);
   });
 
   if (els.refreshBtn) {
@@ -100,7 +108,204 @@ function bindUi() {
     });
   }
 
+  bindCityAutocomplete();
   bindSettingsMenu();
+}
+
+function requestCityWeather(cityName) {
+  const requestedCity = String(cityName || "").trim();
+  if (!requestedCity) {
+    return;
+  }
+
+  state.city = requestedCity;
+  state.reconnectAttempt = 0;
+  clearReconnectTimer();
+  setBadge("connecting", "Подключение");
+  connect(requestedCity);
+  loadSnapshot(requestedCity);
+}
+
+function bindCityAutocomplete() {
+  if (!els.cityInput || !els.citySuggestions || !els.cityForm) {
+    return;
+  }
+
+  els.cityInput.addEventListener("input", () => {
+    const query = els.cityInput.value.trim();
+    clearAutocompleteTimer();
+
+    if (!query) {
+      cancelCityAutocomplete();
+      hideCitySuggestions();
+      return;
+    }
+
+    state.autocompleteTimer = window.setTimeout(() => {
+      void loadCitySuggestions(query);
+    }, CITY_AUTOCOMPLETE_DELAY_MS);
+  });
+
+  els.citySuggestions.addEventListener("click", (event) => {
+    if (!(event.target instanceof Element)) {
+      return;
+    }
+
+    const option = event.target.closest("[data-city-index]");
+    if (!option) {
+      return;
+    }
+
+    const index = Number(option.getAttribute("data-city-index"));
+    const selected = state.citySuggestions[index];
+    if (!selected || !selected.name) {
+      return;
+    }
+
+    els.cityInput.value = selected.name;
+    cancelCityAutocomplete();
+    hideCitySuggestions();
+    requestCityWeather(selected.name);
+  });
+
+  document.addEventListener("click", (event) => {
+    if (!(event.target instanceof Node)) {
+      return;
+    }
+    if (!els.cityForm.contains(event.target)) {
+      hideCitySuggestions();
+    }
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      hideCitySuggestions();
+    }
+  });
+}
+
+function clearAutocompleteTimer() {
+  if (!state.autocompleteTimer) {
+    return;
+  }
+  window.clearTimeout(state.autocompleteTimer);
+  state.autocompleteTimer = null;
+}
+
+function cancelCityAutocomplete() {
+  clearAutocompleteTimer();
+  if (!state.autocompleteController) {
+    return;
+  }
+  state.autocompleteController.abort();
+  state.autocompleteController = null;
+}
+
+async function loadCitySuggestions(query) {
+  const normalizedQuery = String(query || "").trim();
+  if (!normalizedQuery) {
+    hideCitySuggestions();
+    return;
+  }
+
+  if (state.autocompleteController) {
+    state.autocompleteController.abort();
+  }
+
+  const controller = new AbortController();
+  state.autocompleteController = controller;
+  const params = new URLSearchParams({
+    name: normalizedQuery,
+    count: String(CITY_AUTOCOMPLETE_LIMIT),
+    language: "ru",
+  });
+
+  try {
+    const response = await fetch(`${CITY_GEOCODING_API}?${params.toString()}`, {
+      signal: controller.signal,
+    });
+    if (!response.ok) {
+      throw new Error(`Geocoding request failed with ${response.status}`);
+    }
+
+    const payload = await response.json();
+    if (state.autocompleteController !== controller) {
+      return;
+    }
+    state.autocompleteController = null;
+
+    if (els.cityInput.value.trim() !== normalizedQuery) {
+      return;
+    }
+
+    const suggestions = normalizeCitySuggestions(payload && payload.results);
+    renderCitySuggestions(suggestions);
+  } catch (error) {
+    if (controller.signal.aborted) {
+      return;
+    }
+    state.autocompleteController = null;
+    hideCitySuggestions();
+  }
+}
+
+function normalizeCitySuggestions(results) {
+  if (!Array.isArray(results)) {
+    return [];
+  }
+
+  return results
+    .map((row) => ({
+      name: typeof row?.name === "string" ? row.name.trim() : "",
+      admin1: typeof row?.admin1 === "string" ? row.admin1.trim() : "",
+      country: typeof row?.country === "string" ? row.country.trim() : "",
+    }))
+    .filter((row) => Boolean(row.name))
+    .slice(0, CITY_AUTOCOMPLETE_LIMIT);
+}
+
+function renderCitySuggestions(suggestions) {
+  if (!els.citySuggestions) {
+    return;
+  }
+
+  state.citySuggestions = Array.isArray(suggestions) ? suggestions : [];
+  if (!state.citySuggestions.length) {
+    hideCitySuggestions();
+    return;
+  }
+
+  els.citySuggestions.innerHTML = state.citySuggestions
+    .map((city, index) => {
+      const locationDetails = [city.admin1, city.country].filter(Boolean).join(", ");
+      const detailsHtml = locationDetails
+        ? `<span class="mt-0.5 block text-xs text-slate-500 dark:text-slate-400">${escapeHtml(locationDetails)}</span>`
+        : "";
+
+      return `
+        <button
+          type="button"
+          class="block w-full border-b border-slate-100 px-3 py-2 text-left text-sm text-slate-700 transition-colors hover:bg-slate-50 focus:bg-slate-50 focus:outline-none last:border-b-0 dark:border-slate-700 dark:text-slate-100 dark:hover:bg-slate-700/40 dark:focus:bg-slate-700/40"
+          data-city-index="${index}"
+          role="option"
+        >
+          <span class="block">${escapeHtml(city.name)}</span>
+          ${detailsHtml}
+        </button>
+      `;
+    })
+    .join("");
+
+  els.citySuggestions.classList.remove("hidden");
+}
+
+function hideCitySuggestions() {
+  if (!els.citySuggestions) {
+    return;
+  }
+  els.citySuggestions.classList.add("hidden");
+  els.citySuggestions.innerHTML = "";
+  state.citySuggestions = [];
 }
 
 function bindSettingsMenu() {
@@ -150,6 +355,12 @@ function bindSettingsMenu() {
     });
   }
 
+  if (els.themeToggle) {
+    els.themeToggle.addEventListener("change", () => {
+      updateTheme(els.themeToggle.checked);
+    });
+  }
+
   if (els.statusPanelToggle) {
     els.statusPanelToggle.addEventListener("change", () => {
       updateSettings({ showUpdateStatus: els.statusPanelToggle.checked });
@@ -185,12 +396,21 @@ function syncSettingsControls() {
   if (els.pressureUnitSelect) {
     els.pressureUnitSelect.value = state.settings.pressureUnit;
   }
+  if (els.themeToggle) {
+    els.themeToggle.checked = state.theme === "dark";
+  }
   if (els.compareModeToggle) {
     els.compareModeToggle.checked = state.settings.showComparison;
   }
   if (els.statusPanelToggle) {
     els.statusPanelToggle.checked = state.settings.showUpdateStatus;
   }
+}
+
+function updateTheme(isDark) {
+  state.theme = isDark ? "dark" : "light";
+  applyTheme(state.theme);
+  saveThemePreference(state.theme);
 }
 
 function applySettingsUi() {
@@ -706,6 +926,30 @@ function saveSettings(settings) {
   }
 }
 
+function loadThemePreference() {
+  try {
+    return sanitizeTheme(localStorage.getItem(THEME_STORAGE_KEY));
+  } catch {
+    return "light";
+  }
+}
+
+function saveThemePreference(theme) {
+  try {
+    localStorage.setItem(THEME_STORAGE_KEY, sanitizeTheme(theme));
+  } catch {
+    // Storage can be unavailable in restricted browser modes.
+  }
+}
+
+function applyTheme(theme) {
+  const root = document.documentElement;
+  const normalized = sanitizeTheme(theme);
+  const isDark = normalized === "dark";
+  root.classList.toggle("dark", isDark);
+  root.classList.toggle("light", !isDark);
+}
+
 function sanitizeSettings(raw) {
   return {
     tempUnit: sanitizeTempUnit(raw.tempUnit),
@@ -731,6 +975,10 @@ function sanitizePressureUnit(value) {
   return value === "mmhg" ? "mmhg" : "hpa";
 }
 
+function sanitizeTheme(value) {
+  return value === "dark" ? "dark" : "light";
+}
+
 function round1(value) {
   return Math.round(value * 10) / 10;
 }
@@ -747,3 +995,4 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
 }
+
