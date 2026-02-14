@@ -353,6 +353,59 @@
   padding-bottom: 0.15rem;
 }
 
+.hourly-forecast-grid {
+  display: grid;
+  grid-template-columns: repeat(24, minmax(7.2rem, 1fr));
+  gap: 0.55rem;
+  overflow-x: auto;
+  padding-bottom: 0.15rem;
+}
+
+.hourly-forecast-item {
+  border-radius: 0.9rem;
+  border: 1px solid #dbeafe;
+  background: #ffffff;
+  padding: 0.55rem;
+  display: grid;
+  gap: 0.2rem;
+  box-shadow: 0 10px 24px -22px rgba(15, 23, 42, 0.6);
+}
+
+.hourly-forecast-time {
+  margin: 0;
+  color: #0f172a;
+  font-size: 0.84rem;
+  font-weight: 700;
+}
+
+.hourly-forecast-date {
+  margin: 0;
+  color: #64748b;
+  font-size: 0.68rem;
+  font-weight: 600;
+}
+
+.hourly-forecast-temp {
+  margin: 0.2rem 0 0;
+  color: #0f172a;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.hourly-forecast-condition {
+  margin: 0;
+  color: #1e293b;
+  font-size: 0.74rem;
+  font-weight: 600;
+}
+
+.hourly-forecast-extra {
+  margin: 0.1rem 0 0;
+  color: #64748b;
+  font-size: 0.68rem;
+  font-weight: 600;
+}
+
 .forecast-day-card {
   border-radius: 1rem;
   border: 1px solid #dbeafe;
@@ -725,6 +778,32 @@
   box-shadow: 0 10px 24px -22px rgba(2, 6, 23, 0.9);
 }
 
+.dark .hourly-forecast-item {
+  border-color: #334155;
+  background: #1e293b;
+  box-shadow: 0 10px 24px -22px rgba(2, 6, 23, 0.9);
+}
+
+.dark .hourly-forecast-time {
+  color: #f1f5f9;
+}
+
+.dark .hourly-forecast-date {
+  color: #94a3b8;
+}
+
+.dark .hourly-forecast-temp {
+  color: #f8fafc;
+}
+
+.dark .hourly-forecast-condition {
+  color: #cbd5e1;
+}
+
+.dark .hourly-forecast-extra {
+  color: #94a3b8;
+}
+
 .dark .forecast-day-name {
   color: #f1f5f9;
 }
@@ -831,6 +910,10 @@
     grid-template-columns: repeat(7, minmax(12.2rem, 1fr));
   }
 
+  .hourly-forecast-grid {
+    grid-template-columns: repeat(24, minmax(6.8rem, 1fr));
+  }
+
   .settings-panel {
     right: auto;
     left: 0;
@@ -861,6 +944,11 @@
   .forecast-grid {
     grid-template-columns: repeat(7, minmax(10.8rem, 1fr));
     gap: 0.55rem;
+  }
+
+  .hourly-forecast-grid {
+    grid-template-columns: repeat(24, minmax(6.2rem, 1fr));
+    gap: 0.5rem;
   }
 
   .source-metrics {
